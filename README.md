@@ -34,17 +34,23 @@ El proyecto se centra especialmente en ofrecer una experiencia **fácil de enten
 
 ---
 
-## Vista del contenido
+## Vista general del proyecto
 
 <div align="center">
-  <img src="app/src/main/res/drawable-nodpi/video_templado_portada.webp" alt="Video técnico de templado de chocolate" width="31%" />
-  <img src="app/src/main/res/drawable-nodpi/photo_cake.webp" alt="Contenido de pastelería" width="31%" />
-  <img src="app/src/main/res/drawable-nodpi/catalog_pasta_pistacho.webp" alt="Ingrediente de pistacho del catálogo" width="31%" />
+
+<img src="https://img.shields.io/badge/Kotlin-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin" />
+<img src="https://img.shields.io/badge/Android-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android" />
+<img src="https://img.shields.io/badge/Jetpack%20Compose-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" />
+<img src="https://img.shields.io/badge/Material%203-6750A4?style=flat-square&logo=materialdesign&logoColor=white" alt="Material 3" />
+<img src="https://img.shields.io/badge/Room-1976D2?style=flat-square" alt="Room" />
+<img src="https://img.shields.io/badge/Gradle-02303A?style=flat-square&logo=gradle&logoColor=white" alt="Gradle" />
+<img src="https://img.shields.io/badge/JUnit-25A162?style=flat-square&logo=junit5&logoColor=white" alt="JUnit" />
+
 </div>
 
-<p align="center"><sub>Fotografías presentes en el proyecto. Los productos se muestran con imágenes de referencia, no necesariamente con sus envases comerciales.</sub></p>
+La interfaz utiliza una combinación de **verde oscuro, tonos crema y superficies claras** para mantener una apariencia cálida y una lectura cómoda. Las distintas secciones se conectan mediante una navegación inferior sencilla, con contenido adaptado a la pantalla del teléfono.
 
-La interfaz utiliza una combinación de **verde oscuro, tonos crema y superficies claras**, buscando una apariencia cálida y una lectura cómoda. Las secciones mantienen una navegación inferior sencilla y contenido adaptado al tamaño del teléfono.
+El proyecto integra exploración de contenidos gastronómicos, consulta de productos, cotizaciones, gestión de perfil y almacenamiento local de información.
 
 ## Funcionalidades principales
 
@@ -245,8 +251,7 @@ Documentación complementaria:
 | **Institución** | Duoc UC |
 | **Evaluación** | Parcial 2 |
 | **Caso semestral** | Master Martini Chile |
-| **Integrantes** | *Completar con los nombres del equipo* |
-| **Número de equipo** | *Completar antes de entregar* |
+| **Integrantes** | Felipe Zapata, Oscar Muñoz y Angel Vergara |
 
 La entrega académica considera el proyecto fuente, su documentación y las evidencias reales de trabajo colaborativo del equipo en GitHub y Trello, conforme a las instrucciones del docente.
 
