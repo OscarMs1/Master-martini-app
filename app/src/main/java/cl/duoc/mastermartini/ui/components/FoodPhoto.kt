@@ -53,6 +53,7 @@ private val illustrationById = mapOf(
     "Gelatería" to R.drawable.photo_icecream,
     "Galletas" to R.drawable.photo_cookies,
     "Food service" to R.drawable.photo_chef,
+    "Retail" to R.drawable.catalog_crema_vegetal,
     "chef" to R.drawable.photo_chef,
     "home-video" to R.drawable.catalog_cobertura_semiamarga,
 )

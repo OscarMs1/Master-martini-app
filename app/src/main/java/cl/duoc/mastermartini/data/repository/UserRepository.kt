@@ -7,20 +7,26 @@ import cl.duoc.mastermartini.data.model.BusinessSize
 import cl.duoc.mastermartini.data.model.BusinessType
 import cl.duoc.mastermartini.data.model.User
 import cl.duoc.mastermartini.data.model.UserRole
+import cl.duoc.mastermartini.data.remote.ApiClient
+import cl.duoc.mastermartini.data.remote.ApiException
+import cl.duoc.mastermartini.data.remote.LoginBody
+import cl.duoc.mastermartini.data.remote.RefreshBody
+import cl.duoc.mastermartini.data.remote.RegistroBody
+import cl.duoc.mastermartini.data.remote.TokenStorage
+import cl.duoc.mastermartini.data.remote.UsuarioDto
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
 
 sealed interface AuthResult {
     data class Success(val user: User) : AuthResult
     data object EmailTaken : AuthResult
     data object InvalidCredentials : AuthResult
+    /** Error del backend o de conexión, con el mensaje para mostrar y los campos con problemas. */
+    data class Error(val message: String, val fields: Map<String, String> = emptyMap()) : AuthResult
 }
 
 data class NewUser(
@@ -28,16 +34,27 @@ data class NewUser(
     val email: String,
     val phone: String,
     val password: String,
+    val run: String,
+    val region: String,
+    val comuna: String,
+    val address: String,
     val businessType: BusinessType,
     val businessSize: BusinessSize,
     val interests: List<String>,
     val acceptedTerms: Boolean,
 )
 
-/** Registro, inicio de sesión y perfil. Une Room (usuarios) y DataStore (sesión). */
+/**
+ * Cuentas de usuario contra el backend de Master Martini (las mismas de la página web).
+ * - El backend valida la contraseña y entrega un JWT; la app nunca guarda la contraseña.
+ * - Room guarda una copia del perfil para mostrarlo sin conexión, más las preferencias propias
+ *   de la app (tipo de negocio, tamaño e intereses).
+ */
 class UserRepository(
     private val userDao: UserDao,
     private val settings: SettingsDataStore,
+    private val client: ApiClient,
+    private val tokens: TokenStorage,
 ) {
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -49,71 +66,52 @@ class UserRepository(
 
     suspend fun register(data: NewUser): AuthResult {
         val email = data.email.trim().lowercase()
-        if (DemoAdminAccount.isReservedEmail(email) || userDao.findByEmail(email) != null) return AuthResult.EmailTaken
-        val salt = newSalt()
-        val entity = UserEntity(
-            name = data.name.trim(),
-            email = email,
-            phone = data.phone.filter { it.isDigit() || it == '+' },
-            passwordHash = hash(data.password, salt),
-            salt = salt,
-            businessType = data.businessType.name,
-            businessSize = data.businessSize.name,
-            interests = data.interests.joinToString("|"),
-            acceptedTerms = data.acceptedTerms,
-        )
-        val id = userDao.insert(entity)
-        settings.setLoggedUser(id)
-        return AuthResult.Success(entity.copy(id = id).toUser())
+        try {
+            client.llamar {
+                registro(
+                    RegistroBody(
+                        nombre = data.name.trim(), email = email, password = data.password,
+                        run = data.run.trim(), telefono = data.phone.trim(),
+                        region = data.region, comuna = data.comuna, direccion = data.address.trim(),
+                    )
+                )
+            }
+        } catch (e: ApiException) {
+            return if (e.status == 409) AuthResult.EmailTaken else AuthResult.Error(e.message, e.fields)
+        }
+        // La cuenta quedó creada: iniciamos sesión con ella y guardamos las preferencias de la app.
+        return login(email, data.password, Preferencias(data.businessType, data.businessSize, data.interests, data.acceptedTerms))
     }
 
-    suspend fun login(email: String, password: String): AuthResult {
-        val normalizedEmail = email.trim().lowercase()
-        // Cuenta predefinida para la EP2: se utiliza el mismo formulario que los clientes.
-        // No se puede registrar otro ADMIN desde la app.
-        if (DemoAdminAccount.isReservedEmail(normalizedEmail)) {
-            if (!DemoAdminAccount.matches(normalizedEmail, password)) return AuthResult.InvalidCredentials
-            val existing = userDao.findByEmail(DemoAdminAccount.EMAIL)
-            val admin = if (existing == null) {
-                val salt = DemoAdminAccount.SEEDED_SALT
-                val created = UserEntity(
-                    name = "Administrador", email = DemoAdminAccount.EMAIL,
-                    phone = "+56911111111", passwordHash = hash(password, salt), salt = salt,
-                    businessType = BusinessType.PASTELERIA.name,
-                    businessSize = BusinessSize.PEQUENO.name,
-                    interests = "", acceptedTerms = true,
-                )
-                val id = userDao.insert(created)
-                created.copy(id = id)
-            } else if (!DemoAdminAccount.isSeededAccount(existing.salt, existing.passwordHash)) {
-                // Una cuenta antigua con el correo reservado no obtiene privilegios por su email.
-                existing.copy(
-                    name = "Administrador", salt = DemoAdminAccount.SEEDED_SALT,
-                    passwordHash = DemoAdminAccount.SEEDED_HASH,
-                ).also { userDao.update(it) }
-            } else existing
-            settings.setLoggedUser(admin.id)
-            return AuthResult.Success(admin.toUser())
+    suspend fun login(email: String, password: String): AuthResult = login(email, password, null)
+
+    private suspend fun login(email: String, password: String, prefs: Preferencias?): AuthResult {
+        val token = try {
+            client.llamar { login(LoginBody(email.trim().lowercase(), password)) }
+        } catch (e: ApiException) {
+            return if (e.status == 401) AuthResult.InvalidCredentials else AuthResult.Error(e.message)
         }
-        val user = userDao.findByEmail(normalizedEmail) ?: return AuthResult.InvalidCredentials
-        if (hash(password, user.salt) != user.passwordHash) return AuthResult.InvalidCredentials
+        tokens.save(token.accessToken, token.refreshToken)
+        val user = guardar(token.usuario, prefs)
         settings.setLoggedUser(user.id)
         return AuthResult.Success(user.toUser())
     }
 
-    suspend fun updateProfile(
-        name: String,
-        phone: String,
-        businessType: BusinessType,
-        businessSize: BusinessSize,
-        interests: List<String>,
-    ) {
+    /** Actualiza la copia local con los datos del backend (por ejemplo, si cambió el rol). */
+    suspend fun refreshProfile() {
+        if (currentUserId() == null) return
+        runCatching { client.llamar { yo() } }.onSuccess { guardar(it, null) }
+    }
+
+    /**
+     * Nombre y teléfono pertenecen a la cuenta del backend, que no tiene una ruta para editarlos:
+     * desde la app solo se cambian las preferencias propias de la app.
+     */
+    suspend fun updateProfile(businessType: BusinessType, businessSize: BusinessSize, interests: List<String>) {
         val id = currentUserId() ?: return
         val current = userDao.findById(id) ?: return
         userDao.update(
             current.copy(
-                name = name.trim(),
-                phone = phone.filter { it.isDigit() || it == '+' },
                 businessType = businessType.name,
                 businessSize = businessSize.name,
                 interests = interests.joinToString("|"),
@@ -121,16 +119,49 @@ class UserRepository(
         )
     }
 
-    suspend fun logout() = settings.setLoggedUser(null)
-
-    private fun newSalt(): String {
-        val bytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
-        return Base64.getEncoder().encodeToString(bytes)
+    suspend fun logout() {
+        val refresh = tokens.refreshToken()
+        // Se revoca el refresh token en el servidor; si no hay conexión, igual se cierra la sesión local.
+        if (refresh != null) runCatching { client.llamar { logout(RefreshBody(refresh)) } }
+        tokens.clear()
+        settings.setLoggedUser(null)
     }
 
-    private fun hash(password: String, salt: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest((salt + password).toByteArray())
-        return Base64.getEncoder().encodeToString(digest)
+    /** La sesión venció en el servidor (refresh token revocado o expirado). */
+    suspend fun onSessionExpired() {
+        tokens.clear()
+        settings.setLoggedUser(null)
+    }
+
+    /** Hay un usuario marcado como conectado pero sin token guardado (por ejemplo, versión antigua). */
+    suspend fun hasBrokenSession(): Boolean = currentUserId() != null && tokens.refreshToken() == null
+
+    private data class Preferencias(
+        val businessType: BusinessType,
+        val businessSize: BusinessSize,
+        val interests: List<String>,
+        val acceptedTerms: Boolean,
+    )
+
+    private suspend fun guardar(dto: UsuarioDto, prefs: Preferencias?): UserEntity {
+        val previo = userDao.findById(dto.id)
+        val entity = UserEntity(
+            id = dto.id,
+            name = dto.nombre,
+            email = dto.email,
+            phone = dto.telefono.orEmpty(),
+            role = dto.rol,
+            run = dto.run.orEmpty(),
+            region = dto.region.orEmpty(),
+            comuna = dto.comuna.orEmpty(),
+            address = dto.direccion.orEmpty(),
+            businessType = prefs?.businessType?.name ?: previo?.businessType ?: BusinessType.PASTELERIA.name,
+            businessSize = prefs?.businessSize?.name ?: previo?.businessSize ?: BusinessSize.PEQUENO.name,
+            interests = prefs?.interests?.joinToString("|") ?: previo?.interests.orEmpty(),
+            acceptedTerms = prefs?.acceptedTerms ?: previo?.acceptedTerms ?: true,
+        )
+        userDao.upsert(entity)
+        return entity
     }
 }
 
@@ -142,6 +173,10 @@ fun UserEntity.toUser() = User(
     businessType = BusinessType.fromName(businessType) ?: BusinessType.PASTELERIA,
     businessSize = BusinessSize.fromName(businessSize) ?: BusinessSize.PEQUENO,
     interests = interests.split("|").filter { it.isNotBlank() },
-    role = if (DemoAdminAccount.isReservedEmail(email) &&
-        DemoAdminAccount.isSeededAccount(salt, passwordHash)) UserRole.ADMIN else UserRole.CLIENTE,
+    // El rol lo decide el backend: la app no puede darse permisos de administrador.
+    role = if (role == "ADMINISTRADOR") UserRole.ADMIN else UserRole.CLIENTE,
+    run = run,
+    region = region,
+    comuna = comuna,
+    address = address,
 )

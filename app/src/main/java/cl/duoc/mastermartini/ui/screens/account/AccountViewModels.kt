@@ -59,6 +59,13 @@ class AccountViewModel(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AccountUiState())
 
+    init {
+        // Pedidos e inscripciones hechos también desde la página web.
+        viewModelScope.launch { quotes.refreshOrders() }
+        viewModelScope.launch { reservations.refreshEnrollments() }
+        viewModelScope.launch { users.refreshProfile() }
+    }
+
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages = _messages.receiveAsFlow()
 
@@ -108,8 +115,6 @@ class EditProfileViewModel(private val users: UserRepository) : ViewModel() {
         }
     }
 
-    fun onName(v: String) = _state.update { it.copy(name = it.name.update(v, Validators::name)) }
-    fun onPhone(v: String) = _state.update { it.copy(phone = it.phone.update(v, Validators::phone)) }
     fun onType(t: BusinessType) = _state.update { it.copy(businessType = t) }
     fun onSize(s: BusinessSize) = _state.update { it.copy(businessSize = s) }
     fun onInterest(i: String) = _state.update {
@@ -120,17 +125,15 @@ class EditProfileViewModel(private val users: UserRepository) : ViewModel() {
     fun save() {
         val s = _state.value
         val v = s.copy(
-            name = s.name.touch(Validators::name),
-            phone = s.phone.touch(Validators::phone),
             interestsError = Validators.atLeast(s.interests, 1, "Elige al menos un tema").error,
         )
-        if (v.name.error != null || v.phone.error != null || v.interestsError != null) {
+        if (v.interestsError != null) {
             _state.value = v.copy(failedAttempts = s.failedAttempts + 1)
             return
         }
         _state.value = v.copy(saving = true)
         viewModelScope.launch {
-            users.updateProfile(v.name.value, v.phone.value, v.businessType!!, v.businessSize!!, v.interests.toList())
+            users.updateProfile(v.businessType!!, v.businessSize!!, v.interests.toList())
             _state.update { it.copy(saving = false, saved = true) }
         }
     }

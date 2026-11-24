@@ -46,6 +46,11 @@ import cl.duoc.mastermartini.ui.components.BrandHeader
 import cl.duoc.mastermartini.ui.components.ChipGroup
 import cl.duoc.mastermartini.ui.components.FieldMessage
 import cl.duoc.mastermartini.ui.components.MMTextField
+import cl.duoc.mastermartini.ui.components.ChoiceField
+import androidx.compose.material.icons.outlined.Badge
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.LocationCity
+import androidx.compose.material.icons.outlined.Map
 import cl.duoc.mastermartini.ui.components.PrimaryButton
 import cl.duoc.mastermartini.ui.components.ScreenTitle
 import cl.duoc.mastermartini.ui.components.SegmentedChoice
@@ -83,8 +88,18 @@ fun RegisterScreen(
             keyboardType = KeyboardType.Phone, onFocusLost = vm::onPhoneBlur,
         )
         MMTextField(
+            "RUN", s.run, vm::onRunChange, Icons.Outlined.Badge, placeholder = "12.345.678-5",
+            onFocusLost = vm::onRunBlur,
+        )
+        ChoiceField("Región", s.region, vm.regions.names, vm::onRegionChange, Icons.Outlined.Map)
+        ChoiceField("Comuna", s.comuna, vm.regions.comunas(s.region.value), vm::onComunaChange, Icons.Outlined.LocationCity)
+        MMTextField(
+            "Dirección", s.address, vm::onAddressChange, Icons.Outlined.Home, placeholder = "Ej: Av. Matta 1234",
+            onFocusLost = vm::onAddressBlur,
+        )
+        MMTextField(
             "Contraseña", s.password, vm::onPasswordChange, Icons.Outlined.Lock, isPassword = true,
-            helper = "Mínimo 8 caracteres, con letras y números", keyboardType = KeyboardType.Password,
+            helper = "Mínimo 10 caracteres, con letras y números", keyboardType = KeyboardType.Password,
             onFocusLost = vm::onPasswordBlur,
         )
         MMTextField(
@@ -131,8 +146,8 @@ fun RegisterScreen(
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
                     Checkbox(checked = s.accepted, onCheckedChange = vm::onAcceptedChange)
                     Text(
-                        "Acepto guardar mis datos de ejemplo y preferencias en este dispositivo para usar la demostración académica. " +
-                            "La aplicación no los envía a Master Martini.",
+                        "Acepto crear mi cuenta en Master Martini (la misma de la página web). Mis preferencias " +
+                            "de negocio e intereses se guardan solo en este dispositivo.",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 12.dp),
                     )
@@ -141,6 +156,7 @@ fun RegisterScreen(
             FieldMessage(error = s.acceptedError)
         }
 
+        s.formError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         PrimaryButton(
             text = "Crear cuenta",
             onClick = vm::submit,

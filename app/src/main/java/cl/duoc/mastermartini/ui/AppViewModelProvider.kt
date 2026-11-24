@@ -22,16 +22,16 @@ import cl.duoc.mastermartini.ui.screens.services.ServicesViewModel
 object AppViewModelProvider {
     val Factory = viewModelFactory {
         initializer { MainViewModel(container().settings) }
-        initializer { RegisterViewModel(container().users) }
+        initializer { RegisterViewModel(container().users, container().regions) }
         initializer { LoginViewModel(container().users) }
-        initializer { HomeViewModel(container().users, container().content, container().reservations, container().settings) }
+        initializer { HomeViewModel(container().users, container().content, container().classes, container().reservations, container().settings) }
         initializer { LearnViewModel(createSavedStateHandle(), container().content, container().settings) }
         initializer { LearnDetailViewModel(createSavedStateHandle(), container().content, container().settings) }
-        initializer { CatalogViewModel(container().content, container().quotes, container().editableCatalog) }
-        initializer { QuoteFormViewModel(container().users, container().quotes, container().notifications) }
-        initializer { ServicesViewModel(container().content, container().reservations, container().notifications, container().settings) }
+        initializer { CatalogViewModel(container().products, container().quotes) }
+        initializer { QuoteFormViewModel(container().users, container().quotes, container().products, container().regions, container().notifications) }
+        initializer { ServicesViewModel(container().content, container().classes, container().reservations, container().notifications, container().settings) }
         initializer {
-            BookingViewModel(createSavedStateHandle(), container().content, container().reservations, container().notifications)
+            BookingViewModel(createSavedStateHandle(), container().content, container().users, container().reservations, container().notifications)
         }
         initializer {
             AccountViewModel(

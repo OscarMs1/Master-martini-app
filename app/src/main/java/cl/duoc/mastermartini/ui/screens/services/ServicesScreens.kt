@@ -152,10 +152,8 @@ private fun ServiceCard(
                 }
                 Spacer(Modifier.weight(1f))
                 val side = when {
-                    item.type == ServiceType.EVENT -> {
-                        val left = item.availableSeats - if (reserved) 1 else 0
-                        "$left de ${item.totalSeats} cupos"
-                    }
+                    // Los cupos vienen del backend y ya descuentan la inscripción propia.
+                    item.type == ServiceType.EVENT -> "${item.availableSeats} cupos disponibles"
                     item.hasCertificate -> "Con certificado"
                     else -> null
                 }
@@ -179,8 +177,11 @@ private fun ServiceCard(
                             Text("Inscrita/o", color = extra.success)
                         }
                     } else {
-                        Button(onClick = onEnroll, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
-                            Text("Inscribirme")
+                        Button(
+                            onClick = onEnroll, enabled = item.availableSeats > 0,
+                            modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small,
+                        ) {
+                            Text(if (item.availableSeats > 0) "Inscribirme" else "Sin cupos")
                         }
                     }
                 ServiceType.ADVISORY -> OutlinedButton(

@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [UserEntity::class, QuoteItemEntity::class, QuoteEntity::class, ReservationEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,7 +24,8 @@ abstract class AppDatabase : RoomDatabase() {
                 AppDatabase::class.java,
                 "master_martini.db",
             )
-                // En etapa MVP: si cambia el esquema se recrea la BD.
+                // Si cambia el esquema se recrea la BD. En la versión 2 las cuentas pasaron al
+                // backend, así que las cuentas locales antiguas ya no sirven.
                 .fallbackToDestructiveMigration()
                 .build()
                 .also { instance = it }

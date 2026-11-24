@@ -81,12 +81,29 @@ object Validators {
         }
     }
 
+    /** Misma regla que el backend: 10 a 72 caracteres, con letras y números. */
     fun password(value: String): ValidationResult = when {
         value.isEmpty() -> ValidationResult.fail("Crea una contraseña")
-        value.length < 8 -> ValidationResult.fail("Mínimo 8 caracteres")
+        value.length < 10 -> ValidationResult.fail("Mínimo 10 caracteres")
+        value.length > 72 -> ValidationResult.fail("Máximo 72 caracteres")
         value.none { it.isDigit() } -> ValidationResult.fail("Incluye al menos un número")
         value.none { it.isLetter() } -> ValidationResult.fail("Incluye al menos una letra")
         else -> ValidationResult.Ok
+    }
+
+    /** RUN chileno con dígito verificador (módulo 11), igual que el backend. Ej: 12.345.678-5 */
+    fun run(value: String): ValidationResult {
+        val run = value.replace(".", "").replace("-", "").replace(" ", "").uppercase()
+        if (value.isBlank()) return ValidationResult.fail("Ingresa tu RUN")
+        if (!Regex("[0-9]{7,8}[0-9K]").matches(run)) return ValidationResult.fail("Formato: 12.345.678-5")
+        var sum = 0
+        var factor = 2
+        for (i in run.length - 2 downTo 0) {
+            sum += (run[i] - '0') * factor
+            factor = if (factor == 7) 2 else factor + 1
+        }
+        val expected = when (val r = 11 - sum % 11) { 11 -> '0'; 10 -> 'K'; else -> '0' + r }
+        return if (run.last() == expected) ValidationResult.Ok else ValidationResult.fail("RUN inválido: revisa el dígito verificador")
     }
 
     fun passwordConfirmation(password: String, confirmation: String): ValidationResult = when {

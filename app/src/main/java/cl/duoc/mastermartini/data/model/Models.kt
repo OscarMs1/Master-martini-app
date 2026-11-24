@@ -2,7 +2,8 @@ package cl.duoc.mastermartini.data.model
 
 /**
  * Modelos de dominio de la app. Son clases simples (sin dependencias de Android)
- * que usan las pantallas. Los datos de contenido son ficticios (MVP académico).
+ * que usan las pantallas. Cuentas, catálogo, pedidos y clases vienen del backend de
+ * Master Martini; el contenido de "Aprende" sigue siendo local (MVP académico).
  */
 
 enum class BusinessType(val label: String) {
@@ -44,6 +45,11 @@ data class User(
     val businessSize: BusinessSize,
     val interests: List<String>,
     val role: UserRole = UserRole.CLIENTE,
+    /** Datos de la cuenta en el backend, necesarios para crear pedidos. */
+    val run: String = "",
+    val region: String = "",
+    val comuna: String = "",
+    val address: String = "",
 ) {
     val isAdmin: Boolean get() = role == UserRole.ADMIN
     val initials: String
@@ -83,8 +89,24 @@ data class Product(
     val category: String,
     val formats: List<String>,
     val description: String,
+    /** Foto local (contenido de "Aprende") o ruta/URL de la foto en el servidor. */
     val imagePath: String? = null,
-)
+    /** Precio en pesos chilenos, sin descuento. 0 en los productos de ejemplo locales. */
+    val price: Long = 0,
+    /** Porcentaje de descuento (0 a 90). */
+    val discount: Int = 0,
+    val stock: Int = 0,
+    val featured: Boolean = false,
+    /** Ruta de la imagen tal como la guarda el backend (se reenvía al editar). */
+    val serverImage: String? = null,
+) {
+    /** Mismo cálculo que el backend y la web: precio con descuento, redondeado. */
+    val finalPrice: Long get() = Math.round(price * (100 - discount) / 100.0)
+    val remoteId: Long? get() = id.toLongOrNull()
+}
+
+/** Formato chileno: $12.990 */
+fun formatClp(value: Long): String = "$" + "%,d".format(value).replace(',', '.')
 
 /** Producto agregado a la cotización en curso. */
 data class QuoteLine(
@@ -94,6 +116,7 @@ data class QuoteLine(
     val quantity: Int,
 )
 
+/** Pedido enviado al backend (la cotización se confirma como pedido con pago simulado). */
 data class SentQuote(
     val id: Long,
     val code: String,
@@ -103,6 +126,9 @@ data class SentQuote(
     val comuna: String,
     val deliveryDate: String,
     val createdAt: Long,
+    /** APROBADO o RECHAZADO (pago simulado). */
+    val status: String = "",
+    val total: Long = 0,
 )
 
 // ---------- Servicios ----------
@@ -133,5 +159,7 @@ data class Reservation(
     val dateLabel: String,
     val modality: String,
     val createdAt: Long,
+    /** Las inscripciones a clases viven en el backend y no se cancelan desde la app. */
+    val canCancel: Boolean = true,
 )
 

@@ -10,8 +10,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface UserDao {
-    @Insert(onConflict = OnConflictStrategy.ABORT)
-    suspend fun insert(user: UserEntity): Long
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(user: UserEntity)
 
     @Update
     suspend fun update(user: UserEntity)
@@ -35,10 +35,9 @@ interface QuoteDao {
     }
 
     @Transaction
-    suspend fun saveAndClear(quote: QuoteEntity): Long {
-        val id = insertQuote(quote)
+    suspend fun saveAndClear(quote: QuoteEntity) {
+        insertQuote(quote)
         clearItems(quote.userId)
-        return id
     }
 
     @Query("SELECT * FROM quote_items WHERE userId = :userId ORDER BY productName")
@@ -56,8 +55,14 @@ interface QuoteDao {
     @Query("DELETE FROM quote_items WHERE userId = :userId")
     suspend fun clearItems(userId: Long)
 
-    @Insert
-    suspend fun insertQuote(quote: QuoteEntity): Long
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertQuote(quote: QuoteEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertQuotes(quotes: List<QuoteEntity>)
+
+    @Query("SELECT * FROM quotes WHERE userId = :userId")
+    suspend fun getQuotes(userId: Long): List<QuoteEntity>
 
     @Query("SELECT * FROM quotes WHERE userId = :userId ORDER BY createdAt DESC")
     fun observeQuotes(userId: Long): Flow<List<QuoteEntity>>

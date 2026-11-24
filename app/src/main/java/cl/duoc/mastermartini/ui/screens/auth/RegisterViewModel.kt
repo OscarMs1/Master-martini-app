@@ -2,6 +2,7 @@ package cl.duoc.mastermartini.ui.screens.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cl.duoc.mastermartini.data.local.RegionCatalog
 import cl.duoc.mastermartini.data.model.BusinessSize
 import cl.duoc.mastermartini.data.model.BusinessType
 import cl.duoc.mastermartini.data.repository.AuthResult
@@ -21,6 +22,10 @@ data class RegisterUiState(
     val name: FieldState = FieldState(),
     val email: FieldState = FieldState(),
     val phone: FieldState = FieldState(),
+    val run: FieldState = FieldState(),
+    val region: FieldState = FieldState(),
+    val comuna: FieldState = FieldState(),
+    val address: FieldState = FieldState(),
     val password: FieldState = FieldState(),
     val confirm: FieldState = FieldState(),
     val businessType: BusinessType? = null,
@@ -32,6 +37,8 @@ data class RegisterUiState(
     val accepted: Boolean = false,
     val acceptedError: String? = null,
     val loading: Boolean = false,
+    /** Error general del backend (por ejemplo, sin conexión). */
+    val formError: String? = null,
     /** Aumenta en cada intento fallido de envío → dispara la animación de sacudida. */
     val failedAttempts: Int = 0,
 ) {
@@ -42,6 +49,10 @@ data class RegisterUiState(
                 name.value.isNotBlank() && Validators.name(name.value).isValid,
                 Validators.email(email.value).isValid,
                 Validators.phone(phone.value).isValid,
+                Validators.run(run.value).isValid,
+                region.value.isNotBlank() && region.error == null,
+                comuna.value.isNotBlank() && comuna.error == null,
+                Validators.address(address.value).isValid,
                 Validators.password(password.value).isValid,
                 confirm.value.isNotEmpty() && confirm.value == password.value,
                 businessType != null,
@@ -61,7 +72,7 @@ sealed interface RegisterEvent {
  * ViewModel del registro. Toda la lógica de validación vive aquí (usando [Validators]);
  * la pantalla solo dibuja el [RegisterUiState] y reenvía eventos del usuario.
  */
-class RegisterViewModel(private val users: UserRepository) : ViewModel() {
+class RegisterViewModel(private val users: UserRepository, val regions: RegionCatalog) : ViewModel() {
 
     private val _state = MutableStateFlow(RegisterUiState())
     val state: StateFlow<RegisterUiState> = _state.asStateFlow()
@@ -72,6 +83,18 @@ class RegisterViewModel(private val users: UserRepository) : ViewModel() {
     fun onNameChange(v: String) = _state.update { it.copy(name = it.name.update(v, Validators::name)) }
     fun onEmailChange(v: String) = _state.update { it.copy(email = it.email.update(v, Validators::email)) }
     fun onPhoneChange(v: String) = _state.update { it.copy(phone = it.phone.update(v, Validators::phone)) }
+    fun onRunChange(v: String) = _state.update { it.copy(run = it.run.update(v.take(12), Validators::run)) }
+    fun onRunBlur() = _state.update { it.copy(run = it.run.touch(Validators::run)) }
+    fun onRegionChange(v: String) = _state.update {
+        val comuna = if (regions.comunas(v).contains(it.comuna.value)) it.comuna else FieldState()
+        it.copy(region = it.region.update(v, ::validateRegion).copy(touched = true), comuna = comuna)
+    }
+    fun onComunaChange(v: String) = _state.update {
+        it.copy(comuna = it.comuna.update(v) { c -> validateComuna(it.region.value, c) }.copy(touched = true))
+    }
+    fun onAddressChange(v: String) = _state.update { it.copy(address = it.address.update(v, Validators::address)) }
+    fun onAddressBlur() = _state.update { it.copy(address = it.address.touch(Validators::address)) }
+
     fun onPasswordChange(v: String) = _state.update {
         it.copy(
             password = it.password.update(v, Validators::password),
@@ -107,6 +130,10 @@ class RegisterViewModel(private val users: UserRepository) : ViewModel() {
             name = s.name.touch(Validators::name),
             email = s.email.touch(Validators::email),
             phone = s.phone.touch(Validators::phone),
+            run = s.run.touch(Validators::run),
+            region = s.region.touch(::validateRegion),
+            comuna = s.comuna.touch { validateComuna(s.region.value, it) },
+            address = s.address.touch(Validators::address),
             password = s.password.touch(Validators::password),
             confirm = s.confirm.touch { Validators.passwordConfirmation(s.password.value, it) },
             businessTypeError = Validators.selected(s.businessType, "Elige el tipo de negocio").error,
@@ -114,7 +141,10 @@ class RegisterViewModel(private val users: UserRepository) : ViewModel() {
             interestsError = Validators.atLeast(s.interests, 1, MSG_INTEREST).error,
             acceptedError = Validators.acceptedTerms(s.accepted).error,
         )
-        val hasErrors = listOf(validated.name, validated.email, validated.phone, validated.password, validated.confirm)
+        val hasErrors = listOf(
+            validated.name, validated.email, validated.phone, validated.run, validated.region,
+            validated.comuna, validated.address, validated.password, validated.confirm,
+        )
             .any { it.error != null } ||
             listOf(validated.businessTypeError, validated.businessSizeError, validated.interestsError, validated.acceptedError)
                 .any { it != null }
@@ -124,12 +154,13 @@ class RegisterViewModel(private val users: UserRepository) : ViewModel() {
             return
         }
 
-        _state.value = validated.copy(loading = true)
+        _state.value = validated.copy(loading = true, formError = null)
         viewModelScope.launch {
             val result = users.register(
                 NewUser(
                     name = s.name.value, email = s.email.value, phone = s.phone.value,
-                    password = s.password.value, businessType = s.businessType!!,
+                    password = s.password.value, run = s.run.value, region = s.region.value,
+                    comuna = s.comuna.value, address = s.address.value, businessType = s.businessType!!,
                     businessSize = s.businessSize!!, interests = s.interests.toList(),
                     acceptedTerms = s.accepted,
                 )
@@ -140,10 +171,24 @@ class RegisterViewModel(private val users: UserRepository) : ViewModel() {
                     it.copy(email = it.email.copy(error = "Este correo ya tiene una cuenta"), failedAttempts = it.failedAttempts + 1)
                 }
                 AuthResult.InvalidCredentials -> Unit
+                is AuthResult.Error -> _state.update { st ->
+                    // Errores por campo que devuelve el backend (ej: "run", "telefono").
+                    fun FieldState.with(key: String) = result.fields[key]?.let { copy(error = it, touched = true) } ?: this
+                    st.copy(
+                        name = st.name.with("nombre"), email = st.email.with("email"), phone = st.phone.with("telefono"),
+                        run = st.run.with("run"), region = st.region.with("region"), comuna = st.comuna.with("comuna"),
+                        address = st.address.with("direccion"), password = st.password.with("password"),
+                        formError = result.message, failedAttempts = st.failedAttempts + 1,
+                    )
+                }
             }
             _state.update { it.copy(loading = false) }
         }
     }
+
+    private fun validateRegion(v: String) = Validators.oneOf(v, regions.names, "Elige una región")
+    private fun validateComuna(region: String, v: String) =
+        Validators.oneOf(v, regions.comunas(region), if (region.isBlank()) "Primero elige la región" else "Elige una comuna")
 
     private companion object {
         const val MSG_INTEREST = "Elige al menos un tema"

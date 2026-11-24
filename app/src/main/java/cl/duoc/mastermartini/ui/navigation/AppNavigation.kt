@@ -126,6 +126,14 @@ fun AppNavigation(isLogged: Boolean, navController: NavHostController = remember
     val currentDestination = backStack?.destination
     val showBottomBar = currentDestination?.route in (TABS.map { it.route } + Routes.SERVICES)
 
+    // Si la sesión termina sola (refresh token vencido o revocado), se vuelve al login.
+    androidx.compose.runtime.LaunchedEffect(isLogged) {
+        val route = navController.currentDestination?.route
+        if (!isLogged && route != null && route != Routes.LOGIN && route != Routes.REGISTER) {
+            navController.navigate(Routes.LOGIN) { popUpTo(navController.graph.id) { inclusive = true } }
+        }
+    }
+
     // Navegar entre pestañas sin apilar pantallas y conservando su estado.
     fun goToTab(route: String) = navController.navigate(route) {
         // Inicio siempre queda en la base de la pila después del login.
@@ -285,7 +293,7 @@ fun AppNavigation(isLogged: Boolean, navController: NavHostController = remember
                 val container = (context.applicationContext as MasterMartiniApp).container
                 val loggedUser by container.users.currentUser.collectAsStateWithLifecycle(initialValue = null)
                 AdminCatalogScreen(
-                    repository = container.editableCatalog,
+                    repository = container.products,
                     isAdmin = loggedUser?.isAdmin == true,
                     onBack = { navController.popBackStack() },
                 )

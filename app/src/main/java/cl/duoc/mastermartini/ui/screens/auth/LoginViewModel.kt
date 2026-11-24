@@ -42,12 +42,12 @@ class LoginViewModel(private val users: UserRepository) : ViewModel() {
         }
         _state.value = v.copy(loading = true)
         viewModelScope.launch {
-            when (users.login(s.email.value, s.password.value)) {
-                is AuthResult.Success -> _loggedIn.send(Unit)
-                else -> _state.update {
-                    it.copy(formError = "Correo o contraseña incorrectos", failedAttempts = it.failedAttempts + 1)
-                }
+            val message = when (val result = users.login(s.email.value, s.password.value)) {
+                is AuthResult.Success -> { _loggedIn.send(Unit); null }
+                is AuthResult.Error -> result.message
+                else -> "Correo o contraseña incorrectos"
             }
+            if (message != null) _state.update { it.copy(formError = message, failedAttempts = it.failedAttempts + 1) }
             _state.update { it.copy(loading = false) }
         }
     }

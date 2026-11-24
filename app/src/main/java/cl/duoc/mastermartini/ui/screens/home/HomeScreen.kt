@@ -112,7 +112,7 @@ fun HomeScreen(
         item {
             SectionHeader("Eventos y asesorías", "Ver servicios", onOpenServices)
             Text(
-                "Consulta actividades de demostración y guarda solicitudes locales.",
+                "Inscríbete en clases de Master Martini y solicita asesorías con un chef.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

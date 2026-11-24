@@ -34,6 +34,8 @@ class ValidatorsTest {
         assertFalse(Validators.password("corta1").isValid)
         assertFalse(Validators.password("sinnumeros").isValid)
         assertTrue(Validators.password("martini2026").isValid)
+        // El backend exige 10 caracteres como mínimo.
+        assertFalse(Validators.password("martini26").isValid)
         assertFalse(Validators.passwordConfirmation("martini2026", "martini2025").isValid)
         assertTrue(Validators.passwordConfirmation("martini2026", "martini2026").isValid)
     }
@@ -59,5 +61,15 @@ class ValidatorsTest {
         assertTrue(Validators.futureWorkingDate(millis(LocalDate.of(2026, 10, 28)), today).isValid)
         assertEquals("Máximo 60 días de anticipación",
             Validators.futureWorkingDate(millis(today.plusDays(90)), today).error)
+    }
+
+    @Test
+    fun runConDigitoVerificador() {
+        assertTrue(Validators.run("12.345.678-5").isValid)
+        assertTrue(Validators.run("123456785").isValid)
+        assertTrue(Validators.run("11.111.111-1").isValid)
+        assertFalse(Validators.run("12.345.678-9").isValid)
+        assertFalse(Validators.run("abc").isValid)
+        assertFalse(Validators.run("").isValid)
     }
 }

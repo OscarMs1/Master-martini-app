@@ -8,6 +8,7 @@ import cl.duoc.mastermartini.data.model.LearnKind
 import cl.duoc.mastermartini.data.model.ServiceItem
 import cl.duoc.mastermartini.data.model.ServiceType
 import cl.duoc.mastermartini.data.model.User
+import cl.duoc.mastermartini.data.repository.ClassRepository
 import cl.duoc.mastermartini.data.repository.ContentRepository
 import cl.duoc.mastermartini.data.repository.ReservationRepository
 import cl.duoc.mastermartini.data.repository.UserRepository
@@ -31,18 +32,20 @@ data class HomeUiState(
 class HomeViewModel(
     users: UserRepository,
     private val content: ContentRepository,
-    reservations: ReservationRepository,
+    private val classes: ClassRepository,
+    private val reservations: ReservationRepository,
     private val settings: SettingsDataStore,
 ) : ViewModel() {
 
     val state: StateFlow<HomeUiState> = combine(
-        users.currentUser, reservations.reservations, settings.settings,
-    ) { user, reserved, prefs ->
+        users.currentUser, reservations.reservations, settings.settings, classes.classes,
+    ) { user, reserved, prefs, upcoming ->
         val all = content.learnItems()
         val preferred = user?.let { content.learnCategoriesFor(it.businessType) }.orEmpty()
         val recipes = all.filter { it.kind == LearnKind.RECIPE }
             .sortedByDescending { it.category in preferred }
-        val event = content.services().firstOrNull { it.type == ServiceType.EVENT }
+        // Próxima clase real del backend (la lista ya viene ordenada por fecha).
+        val event = upcoming.firstOrNull { it.type == ServiceType.EVENT }
         HomeUiState(
             user = user,
             featured = all.firstOrNull { it.kind == LearnKind.VIDEO && it.isNew } ?: all.first(),
@@ -52,6 +55,11 @@ class HomeViewModel(
             largeText = prefs.largeText,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+
+    init {
+        viewModelScope.launch { classes.refresh() }
+        viewModelScope.launch { reservations.refreshEnrollments() }
+    }
 
     fun toggleLargeText() {
         viewModelScope.launch { settings.setLargeText(!settings.settings.first().largeText) }

@@ -68,6 +68,9 @@ import cl.duoc.mastermartini.ui.components.shake
 import cl.duoc.mastermartini.ui.screens.learn.CategoryChips
 import cl.duoc.mastermartini.ui.screens.learn.SearchField
 import cl.duoc.mastermartini.ui.theme.LocalExtraColors
+import cl.duoc.mastermartini.data.model.formatClp
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.text.style.TextDecoration
 
 @Composable
 fun CatalogScreen(
@@ -78,7 +81,7 @@ fun CatalogScreen(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            ScreenTitle("Catálogo", Modifier.padding(horizontal = 20.dp, vertical = 12.dp), subtitle = "Productos de ejemplo · Fotografías reales referenciales")
+            ScreenTitle("Catálogo", Modifier.padding(horizontal = 20.dp, vertical = 12.dp), subtitle = "Catálogo Master Martini · precios con IVA incluido")
             SearchField(s.query, vm::onQuery, "Buscar producto", Modifier.padding(horizontal = 20.dp))
             Spacer(Modifier.height(12.dp))
             CategoryChips(s.categories, s.category, vm::onCategory)
@@ -86,7 +89,17 @@ fun CatalogScreen(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 110.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (s.products.isEmpty()) item { EmptyState("No hay productos que coincidan.") }
+                s.error?.let { msg ->
+                    item {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                            EmptyState(msg)
+                            CapsuleButton("Reintentar", onClick = vm::refresh)
+                        }
+                    }
+                }
+                if (s.loading && s.products.isEmpty()) item {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                } else if (s.products.isEmpty() && s.error == null) item { EmptyState("No hay productos que coincidan.") }
                 items(s.products, key = { it.id }) { p ->
                     ProductRow(p, s.lines[p.id], Modifier.animateItem()) { vm.openSheet(p) }
                 }
@@ -150,6 +163,20 @@ private fun ProductRow(product: Product, line: QuoteLine?, modifier: Modifier, o
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(5.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(formatClp(product.finalPrice), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    if (product.discount > 0) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            formatClp(product.price),
+                            style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.LineThrough),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("-${product.discount} %", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                Spacer(Modifier.height(5.dp))
                 Text(
                     product.description,
                     style = MaterialTheme.typography.bodySmall,
@@ -163,7 +190,9 @@ private fun ProductRow(product: Product, line: QuoteLine?, modifier: Modifier, o
                     transitionSpec = { (scaleIn() + fadeIn()) togetherWith fadeOut() using SizeTransform(clip = false) },
                     label = "addButton",
                 ) { current ->
-                    if (current == null) {
+                    if (current == null && product.stock <= 0) {
+                        Text("Sin stock por ahora", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
+                    } else if (current == null) {
                         CapsuleButton("Agregar", onClick = onAdd)
                     } else {
                         Surface(

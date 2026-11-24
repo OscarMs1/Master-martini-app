@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cl.duoc.mastermartini.data.model.ServiceItem
 import cl.duoc.mastermartini.data.model.ServiceType
+import cl.duoc.mastermartini.data.repository.ClassRepository
 import cl.duoc.mastermartini.data.repository.ContentRepository
+import cl.duoc.mastermartini.data.repository.UserRepository
 import cl.duoc.mastermartini.data.repository.ReservationRepository
 import cl.duoc.mastermartini.data.repository.ReserveResult
 import cl.duoc.mastermartini.device.NotificationHelper
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -30,25 +33,38 @@ data class ServicesUiState(
     val services: List<ServiceItem> = emptyList(),
     val reservedIds: Set<String> = emptySet(),
     val confirming: ServiceItem? = null,
+    val error: String? = null,
 )
 
 class ServicesViewModel(
     private val content: ContentRepository,
+    private val classes: ClassRepository,
     private val reservations: ReservationRepository,
     private val notifications: NotificationHelper,
     private val settings: cl.duoc.mastermartini.data.local.SettingsDataStore,
 ) : ViewModel() {
 
+    init { refresh() }
+
+    fun refresh() {
+        viewModelScope.launch { classes.refresh() }
+        viewModelScope.launch { reservations.refreshEnrollments() }
+    }
+
     private val filter = MutableStateFlow<ServiceType?>(null)
     private val confirming = MutableStateFlow<ServiceItem?>(null)
 
     val state: StateFlow<ServicesUiState> =
-        combine(filter, confirming, reservations.reservations, settings.learning) { f, c, res, learning ->
+        combine(filter, confirming, reservations.reservations, settings.learning, combine(classes.classes, classes.error, ::Pair)) { f, c, res, learning, (remote, error) ->
+            // Eventos = clases reales del backend. Cursos y asesorías siguen siendo contenido de la app.
+            val local = content.services().filter { it.type != ServiceType.EVENT }
+                .map { item -> item.copy(progress = item.learnId?.let { learning.progress(it, content.learnItem(it)?.steps?.size ?: 0) }) }
             ServicesUiState(
                 filter = f,
-                services = content.services().filter { f == null || it.type == f }.map { item -> item.copy(progress = item.learnId?.let { learning.progress(it, content.learnItem(it)?.steps?.size ?: 0) }) },
+                services = (remote + local).filter { f == null || it.type == f },
                 reservedIds = res.map { it.serviceId }.toSet(),
                 confirming = c,
+                error = error,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ServicesUiState())
 
@@ -63,20 +79,16 @@ class ServicesViewModel(
         val item = confirming.value ?: return
         confirming.value = null
         viewModelScope.launch {
-            val result = reservations.reserve(
-                serviceId = item.id, title = item.title,
-                dateLabel = item.dateLabel.orEmpty(), modality = "Presencial",
-            )
+            val result = reservations.enroll(item.id)
             val msg = when (result) {
                 ReserveResult.Success -> {
-                    val shown = notifications.show(
-                        "Inscripción local guardada",
-                        "Actividad de ejemplo: ${item.title} · ${item.dateLabel}.",
-                    )
-                    if (shown) "Inscripción de ejemplo guardada con notificación local." else "Inscripción de ejemplo guardada en este dispositivo."
+                    classes.refresh() // los cupos cambiaron
+                    notifications.show("Inscripción confirmada", "${item.title} · ${item.dateLabel}.")
+                    "Inscripción confirmada. La verás en Mi cuenta y en la página web."
                 }
-                ReserveResult.AlreadyReserved -> "Ya estabas inscrita/o en este evento"
+                ReserveResult.AlreadyReserved -> "Ya estabas inscrita/o en esta clase"
                 ReserveResult.NotLogged -> "Inicia sesión para inscribirte"
+                is ReserveResult.Error -> result.message
             }
             _messages.send(msg)
         }
@@ -113,6 +125,7 @@ data class BookingUiState(
 class BookingViewModel(
     savedState: SavedStateHandle,
     content: ContentRepository,
+    private val users: UserRepository,
     private val reservations: ReservationRepository,
     private val notifications: NotificationHelper,
 ) : ViewModel() {
@@ -158,21 +171,23 @@ class BookingViewModel(
         _state.value = v.copy(loading = true)
         viewModelScope.launch {
             val schedule = "${v.dateLabel} · ${v.time} h"
-            val result = reservations.reserve(
+            val user = users.currentUser.first()
+            val result = if (user == null) ReserveResult.NotLogged else reservations.requestAdvisory(
+                user = user,
                 serviceId = service.id,
                 title = "${service.title} (${v.topic})",
                 dateLabel = schedule,
                 modality = v.modality!!.label + if (needsAddress) " · ${v.address.value}" else "",
                 notes = v.description.value,
-                allowRepeat = true,
             )
             if (result != ReserveResult.Success) {
-                _state.update { it.copy(loading = false, description = it.description.copy(error = "No se pudo guardar. Revisa tu sesión.")) }
+                val msg = (result as? ReserveResult.Error)?.message ?: "No se pudo enviar. Revisa tu sesión."
+                _state.update { it.copy(loading = false, description = it.description.copy(error = msg)) }
                 return@launch
             }
             val notified = notifications.show(
-                "Solicitud de asesoría guardada",
-                "$schedule · ${v.modality.label}. Solicitud de ejemplo, sin envío a la empresa.",
+                "Solicitud de asesoría enviada",
+                "$schedule · ${v.modality?.label}. El equipo de Master Martini te contactará para confirmar.",
             )
             _state.update { it.copy(loading = false, confirmed = true, notified = notified) }
         }

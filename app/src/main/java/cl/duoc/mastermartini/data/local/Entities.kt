@@ -6,15 +6,23 @@ import androidx.room.PrimaryKey
 
 /** Tablas de Room (SQLite local). */
 
+/**
+ * Copia local del usuario que inició sesión. El [id] es el mismo del backend.
+ * La contraseña ya no se guarda en el teléfono: la valida el backend.
+ * Tipo de negocio, tamaño e intereses son preferencias de la app (el backend no las tiene).
+ */
 @Entity(tableName = "users", indices = [Index(value = ["email"], unique = true)])
 data class UserEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @PrimaryKey val id: Long,
     val name: String,
     val email: String,
     val phone: String,
-    /** Nunca guardamos la contraseña en texto plano: solo su hash SHA-256 con sal. */
-    val passwordHash: String,
-    val salt: String,
+    /** CLIENTE o ADMINISTRADOR, según el backend. */
+    val role: String,
+    val run: String,
+    val region: String,
+    val comuna: String,
+    val address: String,
     val businessType: String,
     val businessSize: String,
     /** Intereses separados por "|" */
@@ -33,10 +41,13 @@ data class QuoteItemEntity(
     val quantity: Int,
 )
 
-/** Cotizaciones guardadas localmente. */
+/**
+ * Pedidos enviados al backend. El [id] es el número de pedido del backend; aquí se guardan además
+ * los datos que el backend no tiene (fecha de despacho deseada y notas).
+ */
 @Entity(tableName = "quotes")
 data class QuoteEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @PrimaryKey val id: Long,
     val userId: Long,
     val itemsSummary: String,
     val itemCount: Int,
@@ -45,6 +56,9 @@ data class QuoteEntity(
     val comuna: String,
     val deliveryDate: String,
     val notes: String,
+    /** APROBADO o RECHAZADO (pago simulado). */
+    val status: String,
+    val total: Long,
     val createdAt: Long = System.currentTimeMillis(),
 )
 

@@ -4,8 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cl.duoc.mastermartini.data.model.Product
 import cl.duoc.mastermartini.data.model.QuoteLine
-import cl.duoc.mastermartini.data.repository.ContentRepository
-import cl.duoc.mastermartini.data.repository.LocalProductRepository
+import cl.duoc.mastermartini.data.repository.ProductRepository
 import cl.duoc.mastermartini.data.repository.QuoteRepository
 import cl.duoc.mastermartini.domain.validation.FieldState
 import cl.duoc.mastermartini.domain.validation.Validators
@@ -26,7 +25,10 @@ data class AddToQuoteForm(
     val quantity: FieldState = FieldState("1"),
     val failedAttempts: Int = 0,
     val isEditing: Boolean = false,
-)
+) {
+    /** No se puede pedir más que el stock disponible (el backend también lo valida). */
+    val maxQuantity: Int get() = product.stock.coerceIn(1, 999)
+}
 
 data class CatalogUiState(
     val query: String = "",
@@ -35,19 +37,24 @@ data class CatalogUiState(
     val products: List<Product> = emptyList(),
     val lines: Map<String, QuoteLine> = emptyMap(),
     val sheet: AddToQuoteForm? = null,
+    val loading: Boolean = false,
+    val error: String? = null,
 ) {
     val quoteCount: Int get() = lines.size
 }
 
 class CatalogViewModel(
-    private val content: ContentRepository,
+    private val catalog: ProductRepository,
     private val quotes: QuoteRepository,
-    private val editableCatalog: LocalProductRepository,
 ) : ViewModel() {
+
+    init { refresh() }
+
+    fun refresh() { viewModelScope.launch { catalog.refresh() } }
 
     private val filters = MutableStateFlow(Triple("", null as String?, null as AddToQuoteForm?))
 
-    val state: StateFlow<CatalogUiState> = combine(filters, quotes.lines, editableCatalog.products) { (query, category, sheet), lines, available ->
+    val state: StateFlow<CatalogUiState> = combine(filters, quotes.lines, catalog.products, catalog.status) { (query, category, sheet), lines, available, status ->
         val q = query.normalized()
         CatalogUiState(
             query = query,
@@ -58,6 +65,8 @@ class CatalogViewModel(
             },
             lines = lines.associateBy { it.productId },
             sheet = sheet,
+            loading = status.loading,
+            error = status.error,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CatalogUiState())
 
@@ -79,16 +88,16 @@ class CatalogViewModel(
     fun closeSheet() = filters.update { it.copy(third = null) }
 
     fun onFormat(f: String) = updateSheet { it.copy(format = f, formatError = null) }
-    fun onQuantity(v: String) = updateSheet { it.copy(quantity = it.quantity.update(v.filter(Char::isDigit).take(3)) { q -> Validators.quantity(q) }.copy(touched = true)) }
+    fun onQuantity(v: String) = updateSheet { it.copy(quantity = it.quantity.update(v.filter(Char::isDigit).take(3)) { q -> Validators.quantity(q, it.maxQuantity) }.copy(touched = true)) }
     fun incQuantity(delta: Int) = updateSheet {
-        val n = ((it.quantity.value.toIntOrNull() ?: 0) + delta).coerceIn(1, 999).toString()
-        it.copy(quantity = it.quantity.update(n) { q -> Validators.quantity(q) })
+        val n = ((it.quantity.value.toIntOrNull() ?: 0) + delta).coerceIn(1, it.maxQuantity).toString()
+        it.copy(quantity = it.quantity.update(n) { q -> Validators.quantity(q, it.maxQuantity) })
     }
 
     fun confirmSheet() {
         val form = filters.value.third ?: return
         val formatError = Validators.selected(form.format, "Elige un formato").error
-        val qty = form.quantity.touch { Validators.quantity(it) }
+        val qty = form.quantity.touch { Validators.quantity(it, form.maxQuantity) }
         if (formatError != null || qty.error != null) {
             updateSheet { it.copy(formatError = formatError, quantity = qty, failedAttempts = it.failedAttempts + 1) }
             return

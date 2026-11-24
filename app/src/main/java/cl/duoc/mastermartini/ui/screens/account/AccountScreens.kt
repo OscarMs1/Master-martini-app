@@ -1,5 +1,7 @@
 package cl.duoc.mastermartini.ui.screens.account
 
+import cl.duoc.mastermartini.ui.theme.LocalExtraColors
+import cl.duoc.mastermartini.data.model.formatClp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -177,7 +179,7 @@ fun AccountScreen(
             MMCard {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Herramientas de administración", style = MaterialTheme.typography.titleMedium)
-                    Text("Gestiona los productos e imágenes del catálogo desde este dispositivo.",
+                    Text("Gestiona productos, precios, stock e imágenes del catálogo (los cambios se ven también en la web).",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     PrimaryButton("Abrir panel de administración", onAdminCatalog)
@@ -188,12 +190,27 @@ fun AccountScreen(
         if (s.quotes.isNotEmpty()) {
             MMCard(Modifier.animateContentSize()) {
                 Column(Modifier.padding(16.dp)) {
-                    Pill("Cotizaciones locales", MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.primary)
+                    Pill("Mis pedidos", MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.primary)
                     s.quotes.forEachIndexed { i, q ->
                         if (i > 0) MMDivider()
                         Column(Modifier.padding(vertical = 8.dp)) {
-                            Text("${q.code} · ${q.itemCount} producto${if (q.itemCount == 1) "" else "s"}", style = MaterialTheme.typography.titleSmall)
-                            Text("${q.comuna} · despacho ${q.deliveryDate.lowercase()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "${q.code} · ${formatClp(q.total)}",
+                                    style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f),
+                                )
+                                val approved = q.status == "APROBADO"
+                                Text(
+                                    if (approved) "Pago aprobado" else "Pago rechazado",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (approved) LocalExtraColors.current.success else MaterialTheme.colorScheme.error,
+                                )
+                            }
+                            Text(q.itemsSummary, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                            Text(
+                                listOf(q.address, q.comuna, q.deliveryDate.lowercase()).filter { it.isNotBlank() }.joinToString(" · "),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -213,7 +230,9 @@ fun AccountScreen(
                             Text(r.title, style = MaterialTheme.typography.titleSmall)
                             Text("${r.dateLabel} · ${r.modality}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        TextButton(onClick = { vm.cancelReservation(r.id) }) { Text("Cancelar", color = MaterialTheme.colorScheme.error) }
+                        if (r.canCancel) {
+                            TextButton(onClick = { vm.cancelReservation(r.id) }) { Text("Cancelar", color = MaterialTheme.colorScheme.error) }
+                        }
                     }
                 }
             }
@@ -320,8 +339,11 @@ fun EditProfileScreen(
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            MMTextField("Nombre", s.name, vm::onName, Icons.Outlined.Person)
-            MMTextField("Teléfono", s.phone, vm::onPhone, Icons.Outlined.Phone, keyboardType = KeyboardType.Phone)
+            MMTextField("Nombre", s.name, {}, Icons.Outlined.Person, readOnly = true)
+            MMTextField(
+                "Teléfono", s.phone, {}, Icons.Outlined.Phone, keyboardType = KeyboardType.Phone, readOnly = true,
+                helper = "Nombre y teléfono son los de tu cuenta Master Martini.",
+            )
             ChipGroup(
                 label = "Tipo de negocio",
                 options = BusinessType.entries,
