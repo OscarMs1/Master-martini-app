@@ -7,10 +7,12 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import cl.duoc.mastermartini.MasterMartiniApp
 import cl.duoc.mastermartini.ui.screens.account.AccountViewModel
+import cl.duoc.mastermartini.ui.screens.account.AddressesViewModel
 import cl.duoc.mastermartini.ui.screens.account.EditProfileViewModel
 import cl.duoc.mastermartini.ui.screens.auth.LoginViewModel
 import cl.duoc.mastermartini.ui.screens.auth.RegisterViewModel
 import cl.duoc.mastermartini.ui.screens.catalog.CatalogViewModel
+import cl.duoc.mastermartini.ui.screens.catalog.ProductReviewsViewModel
 import cl.duoc.mastermartini.ui.screens.catalog.QuoteFormViewModel
 import cl.duoc.mastermartini.ui.screens.home.HomeViewModel
 import cl.duoc.mastermartini.ui.screens.learn.LearnDetailViewModel
@@ -27,8 +29,11 @@ object AppViewModelProvider {
         initializer { HomeViewModel(container().users, container().content, container().classes, container().reservations, container().settings) }
         initializer { LearnViewModel(createSavedStateHandle(), container().content, container().settings) }
         initializer { LearnDetailViewModel(createSavedStateHandle(), container().content, container().settings) }
-        initializer { CatalogViewModel(container().products, container().quotes) }
-        initializer { QuoteFormViewModel(container().users, container().quotes, container().products, container().regions, container().notifications) }
+        initializer { CatalogViewModel(container().products, container().quotes, container().favorites) }
+        initializer { QuoteFormViewModel(
+                container().users, container().quotes, container().products, container().regions, container().notifications,
+                container().classes, container().reservations, container().addresses,
+            ) }
         initializer { ServicesViewModel(container().content, container().classes, container().reservations, container().notifications, container().settings) }
         initializer {
             BookingViewModel(createSavedStateHandle(), container().content, container().users, container().reservations, container().notifications)
@@ -37,9 +42,12 @@ object AppViewModelProvider {
             AccountViewModel(
                 container().users, container().content, container().quotes,
                 container().reservations, container().settings,
+                container().addresses, container().favorites, container().products,
             )
         }
         initializer { EditProfileViewModel(container().users) }
+        initializer { ProductReviewsViewModel(createSavedStateHandle(), container().products, container().users, container().reviews) }
+        initializer { AddressesViewModel(container().users, container().addresses, container().regions) }
     }
 }
 

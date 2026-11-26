@@ -59,11 +59,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import cl.duoc.mastermartini.ui.screens.account.AccountScreen
+import cl.duoc.mastermartini.ui.screens.account.AddressesScreen
 import cl.duoc.mastermartini.ui.screens.account.EditProfileScreen
 import cl.duoc.mastermartini.ui.screens.auth.LoginScreen
 import cl.duoc.mastermartini.ui.screens.auth.RegisterScreen
 import cl.duoc.mastermartini.ui.screens.catalog.AdminCatalogScreen
 import cl.duoc.mastermartini.ui.screens.catalog.CatalogScreen
+import cl.duoc.mastermartini.ui.screens.catalog.ProductReviewsScreen
 import cl.duoc.mastermartini.ui.screens.catalog.QuoteFormScreen
 import cl.duoc.mastermartini.ui.screens.home.HomeScreen
 import cl.duoc.mastermartini.ui.screens.learn.LearnDetailScreen
@@ -85,6 +87,8 @@ object Routes {
     const val BOOKING = "booking/{id}"
     const val EDIT_PROFILE = "profile/edit"
     const val ADMIN_CATALOG = "catalog/admin"
+    const val ADDRESSES = "account/addresses"
+    const val REVIEWS = "catalog/product/{id}/reviews"
 
     fun learn(tab: String? = null, category: String? = null): String = buildString {
         append("learn")
@@ -95,6 +99,7 @@ object Routes {
     }
     fun learnDetail(id: String) = "learn/detail/$id"
     fun booking(id: String) = "booking/$id"
+    fun reviews(productId: String) = "catalog/product/${Uri.encode(productId)}/reviews"
 }
 
 private data class Tab(val route: String, val navRoute: String, val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
@@ -237,7 +242,10 @@ fun AppNavigation(isLogged: Boolean, navController: NavHostController = remember
                 LearnScreen(onOpenContent = { navController.navigate(Routes.learnDetail(it)) })
             } }
             composable(Routes.CATALOG) { TabFrame {
-                CatalogScreen(onSendQuote = { navController.navigate(Routes.QUOTE) })
+                CatalogScreen(
+                    onSendQuote = { navController.navigate(Routes.QUOTE) },
+                    onOpenReviews = { navController.navigate(Routes.reviews(it)) },
+                )
             } }
             composable(Routes.SERVICES) { TabFrame {
                 ServicesScreen(
@@ -249,6 +257,8 @@ fun AppNavigation(isLogged: Boolean, navController: NavHostController = remember
             composable(Routes.ACCOUNT) { TabFrame {
                 AccountScreen(
                     onEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
+                    onManageAddresses = { navController.navigate(Routes.ADDRESSES) },
+                    onOpenCart = { navController.navigate(Routes.QUOTE) },
                     onGoToCatalog = { goToTab(Routes.CATALOG) },
                     onAdminCatalog = { navController.navigate(Routes.ADMIN_CATALOG) },
                     onLoggedOut = {
@@ -304,6 +314,21 @@ fun AppNavigation(isLogged: Boolean, navController: NavHostController = remember
                 popEnterTransition = { popEnter() }, popExitTransition = { popExit() },
             ) {
                 EditProfileScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
+                Routes.ADDRESSES,
+                enterTransition = { pushEnter() }, exitTransition = { pushExit() },
+                popEnterTransition = { popEnter() }, popExitTransition = { popExit() },
+            ) {
+                AddressesScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
+                Routes.REVIEWS,
+                arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                enterTransition = { pushEnter() }, exitTransition = { pushExit() },
+                popEnterTransition = { popEnter() }, popExitTransition = { popExit() },
+            ) {
+                ProductReviewsScreen(onBack = { navController.popBackStack() })
             }
         }
     }

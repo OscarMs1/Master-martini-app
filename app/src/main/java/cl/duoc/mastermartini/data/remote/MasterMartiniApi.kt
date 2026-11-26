@@ -63,6 +63,36 @@ interface MasterMartiniApi {
     @GET("api/v1/inscripciones/mis-inscripciones")
     suspend fun misInscripciones(): List<InscripcionDto>
 
+    // Direcciones guardadas (máximo 5 por cuenta, las mismas de la web)
+    @GET("api/v1/direcciones")
+    suspend fun direcciones(): List<DireccionDto>
+
+    @POST("api/v1/direcciones")
+    suspend fun guardarDireccion(@Body body: DireccionBody)
+
+    @DELETE("api/v1/direcciones/{id}")
+    suspend fun borrarDireccion(@Path("id") id: Long)
+
+    // Favoritos
+    @GET("api/v1/favoritos")
+    suspend fun favoritos(): List<FavoritoDto>
+
+    @POST("api/v1/favoritos/{id}")
+    suspend fun agregarFavorito(@Path("id") productoId: Long)
+
+    @DELETE("api/v1/favoritos/{id}")
+    suspend fun quitarFavorito(@Path("id") productoId: Long)
+
+    // Reseñas de productos (las mismas de la ficha en la web). Una por cliente y producto.
+    @GET("api/v1/resenas/producto/{id}")
+    suspend fun resenas(@Path("id") productoId: Long): ResenasDto
+
+    @POST("api/v1/resenas/producto/{id}")
+    suspend fun opinar(@Path("id") productoId: Long, @Body body: OpinionBody)
+
+    @DELETE("api/v1/resenas/{id}")
+    suspend fun borrarResena(@Path("id") id: Long)
+
     // Contacto
     @POST("api/v1/contactos")
     suspend fun contacto(@Body body: ContactoBody)

@@ -66,5 +66,7 @@ class ClassRepository(private val client: ApiClient) {
         dateLabel = formatFecha(fecha),
         takenSeats = 0,
         totalSeats = cuposDisponibles,
+        productIds = productos.orEmpty().map { it.id.toString() },
+        description = descripcion,
     )
 }

@@ -72,6 +72,10 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,6 +86,10 @@ fun QuoteFormScreen(
 ) {
     val s by vm.state.collectAsStateWithLifecycle()
     val lines by vm.lines.collectAsStateWithLifecycle()
+    val suggestions by vm.suggestions.collectAsStateWithLifecycle()
+    val saved by vm.savedAddresses.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
     val askNotifications = rememberNotificationPermission()
     val context = LocalContext.current
 
@@ -93,6 +101,7 @@ fun QuoteFormScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Column(
@@ -128,8 +137,13 @@ fun QuoteFormScreen(
                 }
             }
 
+            // Sugerencias según lo que hay en el carrito.
+            ProductSuggestionsRow(suggestions.products, cartEmpty = lines.isEmpty(), onAdd = vm::addSuggestion)
+            ClassSuggestionsCard(suggestions.classes, onEnroll = vm::askClass)
+
             Text("Datos de despacho", style = MaterialTheme.typography.titleMedium)
             SegmentedChoice("Entrega", Delivery.entries, s.delivery, vm::onDelivery, { it.label })
+            if (s.delivery == Delivery.DOMICILIO) SavedAddressChips(saved, s.selectedAddressId, vm::applyAddress)
             MMTextField("Nombre de contacto", s.contactName, vm::onContact, Icons.Outlined.Person, onFocusLost = vm::onContactBlur)
             MMTextField(
                 "Teléfono", s.phone, vm::onPhone, Icons.Outlined.Phone,
@@ -141,6 +155,12 @@ fun QuoteFormScreen(
                 "Dirección", s.address, vm::onAddress, Icons.Outlined.Home,
                 placeholder = "Ej: Av. Matta 1234, local 2", onFocusLost = vm::onAddressBlur,
             )
+            if (vm.canSaveAddress(s, saved)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = s.saveAddress, onCheckedChange = vm::onSaveAddress)
+                    Text("Guardar en Mis direcciones para la próxima compra", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
             DateField(
                 label = if (s.delivery == Delivery.RETIRO) "Fecha de retiro deseada" else "Fecha de despacho deseada",
                 valueLabel = s.dateLabel,
@@ -188,6 +208,16 @@ fun QuoteFormScreen(
             )
             Spacer(Modifier.height(16.dp))
         }
+    }
+
+    s.confirmingClass?.let { c ->
+        AlertDialog(
+            onDismissRequest = vm::dismissClass,
+            title = { Text("Inscribirte en ${c.title}") },
+            text = { Text(listOfNotNull(c.dateLabel, c.detail.takeIf { it.isNotBlank() }, "${c.availableSeats} cupos disponibles").joinToString("\n")) },
+            confirmButton = { TextButton(onClick = vm::confirmClass) { Text("Confirmar inscripción") } },
+            dismissButton = { TextButton(onClick = vm::dismissClass) { Text("Ahora no") } },
+        )
     }
 
     s.sent?.let { sent ->

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html, body { margin: 0; padding: 0; background: transparent; }
+    body { font-family: sans-serif; font-size: 16px; line-height: 1.45; color: #1d2b25; }
+    .contenido { position: relative; min-height: calc(100vh - 24px); padding: 12px 14px; outline: none; }
+    .contenido p { margin: 0 0 .5em; }
+    .contenido ul, .contenido ol { margin: 0 0 .5em; padding-left: 1.3em; }
+    /* Ayuda mientras está vacío */
+    .contenido:has(> p:only-child > br.ProseMirror-trailingBreak:only-child)::before {
+      content: "Cuéntanos cómo lo utilizaste (10 a 500 caracteres)"; position: absolute; color: var(--hint, #8a958f); pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="editor"></div>
+  <script src="editor.js"></script>
+</body>
+</html>

@@ -31,6 +31,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Call
+import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material.icons.outlined.Replay
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Person
@@ -89,6 +93,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun AccountScreen(
     onEditProfile: () -> Unit,
+    onManageAddresses: () -> Unit,
+    onOpenCart: () -> Unit,
     onGoToCatalog: () -> Unit,
     onAdminCatalog: () -> Unit,
     onLoggedOut: () -> Unit,
@@ -116,6 +122,7 @@ fun AccountScreen(
         }
     }
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
+    LaunchedEffect(Unit) { vm.openCart.collect { onOpenCart() } }
 
     fun toast(msg: String) = scope.launch { snackbar.showSnackbar(msg) }
 
@@ -211,9 +218,63 @@ fun AccountScreen(
                                 listOf(q.address, q.comuna, q.deliveryDate.lowercase()).filter { it.isNotBlank() }.joinToString(" · "),
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            TextButton(
+                                onClick = { vm.repeatOrder(q.id) },
+                                enabled = s.repeatingOrderId == null,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp),
+                            ) {
+                                Icon(Icons.Outlined.Replay, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (s.repeatingOrderId == q.id) "Cargando…" else "Repetir pedido")
+                            }
                         }
                     }
                 }
+            }
+        }
+
+        // Direcciones guardadas (las mismas de la web).
+        MMCard(onClick = onManageAddresses) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Place, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Mis direcciones", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (s.addresses.isEmpty()) "Guarda tus locales para pagar más rápido"
+                        else s.addresses.joinToString(" · ") { it.label } + " (${s.addresses.size}/5)",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
+            }
+        }
+
+        MMCard(Modifier.animateContentSize()) {
+            Column(Modifier.padding(16.dp)) {
+                Pill("Mis favoritos", MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.primary)
+                if (s.favorites.isEmpty()) {
+                    Text(
+                        "Toca el corazón en el catálogo para guardar productos.",
+                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+                s.favorites.forEachIndexed { i, p ->
+                    if (i > 0) MMDivider()
+                    Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(p.name, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                formatClp(p.finalPrice) + if (p.stock <= 0) " · sin stock" else "",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { vm.removeFavorite(p.id) }) {
+                            Icon(Icons.Filled.Favorite, "Quitar ${p.name} de favoritos", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+                if (s.favorites.isNotEmpty()) TextButton(onClick = onGoToCatalog) { Text("Ver en el catálogo") }
             }
         }
 

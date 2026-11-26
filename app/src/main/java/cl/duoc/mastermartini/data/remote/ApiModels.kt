@@ -120,7 +120,12 @@ data class ClaseDto(
     val duracion: String?,
     val lugar: String?,
     val cuposDisponibles: Int,
+    val imagen: String? = null,
+    /** Productos del catálogo que se usan en la clase (sirve para recomendar clases según el carrito). */
+    val productos: List<ClaseProductoDto>? = null,
 )
+
+data class ClaseProductoDto(val id: Long, val nombre: String?)
 
 data class InscripcionBody(val claseId: Long)
 
@@ -131,6 +136,51 @@ data class InscripcionDto(
     val modalidad: String?,
     val fechaClase: String?,
 )
+
+// ---------- Direcciones guardadas y favoritos (cuenta con sesión iniciada) ----------
+
+data class DireccionBody(
+    val etiqueta: String,
+    val nombre: String,
+    val email: String,
+    val run: String,
+    val telefono: String,
+    val region: String,
+    val comuna: String,
+    val direccion: String,
+)
+
+data class DireccionDto(
+    val id: Long,
+    val etiqueta: String?,
+    val nombre: String?,
+    val telefono: String?,
+    val region: String?,
+    val comuna: String?,
+    val direccion: String?,
+)
+
+data class FavoritoDto(val productoId: Long, val fecha: String?)
+
+// Reseñas de productos. El comentario es HTML con formato básico (negrita, cursiva, listas):
+// el backend lo limpia antes de guardarlo.
+data class ResenasDto(
+    val productoId: Long,
+    val promedio: Double?,
+    val cantidad: Long?,
+    val opiniones: List<ResenaDto>?,
+)
+
+data class ResenaDto(
+    val id: Long,
+    val autor: String?,
+    val puntuacion: Int,
+    val comentario: String?,
+    val fecha: String?,
+    val mia: Boolean?,
+)
+
+data class OpinionBody(val puntuacion: Int, val comentario: String)
 
 // ---------- Contacto (solicitudes de asesoría) ----------
 

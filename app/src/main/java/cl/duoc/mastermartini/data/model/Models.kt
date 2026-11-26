@@ -131,6 +131,19 @@ data class SentQuote(
     val total: Long = 0,
 )
 
+/** Dirección guardada en la cuenta (GET /api/v1/direcciones). */
+data class SavedAddress(
+    val id: Long,
+    val label: String,
+    val contactName: String,
+    val phone: String,
+    val region: String,
+    val comuna: String,
+    val address: String,
+) {
+    val summary: String get() = "$address, $comuna"
+}
+
 // ---------- Servicios ----------
 
 enum class ServiceType(val label: String) { COURSE("Cursos"), ADVISORY("Asesorías"), EVENT("Eventos") }
@@ -148,6 +161,9 @@ data class ServiceItem(
     val hasCertificate: Boolean = false,
     /** Para cursos: id del contenido en "Aprende" que se abre al continuar. */
     val learnId: String? = null,
+    /** Para clases del backend: productos del catálogo que se usan en la clase. */
+    val productIds: List<String> = emptyList(),
+    val description: String? = null,
 ) {
     val availableSeats: Int get() = totalSeats - takenSeats
 }

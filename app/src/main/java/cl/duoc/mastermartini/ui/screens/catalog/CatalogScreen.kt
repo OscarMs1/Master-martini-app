@@ -71,13 +71,24 @@ import cl.duoc.mastermartini.ui.theme.LocalExtraColors
 import cl.duoc.mastermartini.data.model.formatClp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun CatalogScreen(
     onSendQuote: () -> Unit,
+    onOpenReviews: (productId: String) -> Unit = {},
     vm: CatalogViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val s by vm.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        vm.messages.collect { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show() }
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -101,7 +112,11 @@ fun CatalogScreen(
                     Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 } else if (s.products.isEmpty() && s.error == null) item { EmptyState("No hay productos que coincidan.") }
                 items(s.products, key = { it.id }) { p ->
-                    ProductRow(p, s.lines[p.id], Modifier.animateItem()) { vm.openSheet(p) }
+                    ProductRow(
+                        p, s.lines[p.id], favorite = p.id in s.favorites, modifier = Modifier.animateItem(),
+                        onFavorite = { vm.toggleFavorite(p) },
+                        onReviews = { onOpenReviews(p.id) },
+                    ) { vm.openSheet(p) }
                 }
             }
         }
@@ -149,14 +164,28 @@ fun CatalogScreen(
 }
 
 @Composable
-private fun ProductRow(product: Product, line: QuoteLine?, modifier: Modifier, onAdd: () -> Unit) {
+private fun ProductRow(
+    product: Product,
+    line: QuoteLine?,
+    favorite: Boolean,
+    modifier: Modifier,
+    onFavorite: () -> Unit,
+    onReviews: () -> Unit,
+    onAdd: () -> Unit,
+) {
     val extra = LocalExtraColors.current
     MMCard(modifier) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             ProductPhoto(product, Modifier.size(96.dp).clip(MaterialTheme.shapes.medium))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(product.name, style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(product.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).padding(top = 4.dp))
+                    IconButton(onClick = onFavorite, modifier = Modifier.size(32.dp)) {
+                        if (favorite) Icon(Icons.Filled.Favorite, "Quitar de favoritos", tint = MaterialTheme.colorScheme.error)
+                        else Icon(Icons.Outlined.FavoriteBorder, "Guardar en favoritos")
+                    }
+                }
                 Text(
                     "Formato${if (product.formats.size > 1) "s" else ""}: ${product.formats.joinToString(" · ")}",
                     style = MaterialTheme.typography.bodySmall,
@@ -183,7 +212,17 @@ private fun ProductRow(product: Product, line: QuoteLine?, modifier: Modifier, o
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(2.dp))
+                TextButton(
+                    onClick = onReviews,
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                    modifier = Modifier.height(36.dp),
+                ) {
+                    Icon(Icons.Outlined.StarBorder, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Ver opiniones", style = MaterialTheme.typography.labelLarge)
+                }
+                Spacer(Modifier.height(4.dp))
                 // Acción que abre el selector de cantidad y formato.
                 AnimatedContent(
                     targetState = line,

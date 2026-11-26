@@ -159,6 +159,23 @@ class QuoteRepository(
         })
     }
 
+    /**
+     * Vuelve a cargar en el carrito los productos de un pedido anterior que siguen disponibles.
+     * Devuelve cuántos productos se agregaron (las cantidades se ajustan al stock actual).
+     */
+    suspend fun repeatOrder(orderId: Long, catalog: List<cl.duoc.mastermartini.data.model.Product>): Int {
+        val pedidos = try { client.llamar { misPedidos() } } catch (_: ApiException) { return -1 }
+        val lineas = pedidos.firstOrNull { it.id == orderId }?.lineas.orEmpty()
+        var added = 0
+        for (l in lineas) {
+            val p = catalog.firstOrNull { it.id == l.productoId.toString() } ?: continue
+            if (p.stock <= 0) continue
+            setLine(p.id, p.name, p.formats.first(), l.cantidad.coerceIn(1, p.stock.coerceAtMost(999)))
+            added++
+        }
+        return added
+    }
+
     private fun PedidoDto.toEntity(userId: Long, deliveryDate: String, notes: String): QuoteEntity {
         val lineas = lineas.orEmpty()
         return QuoteEntity(

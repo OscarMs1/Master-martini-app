@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cl.duoc.mastermartini.data.model.Product
 import cl.duoc.mastermartini.data.model.QuoteLine
+import cl.duoc.mastermartini.data.repository.FavoriteRepository
 import cl.duoc.mastermartini.data.repository.ProductRepository
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import cl.duoc.mastermartini.data.repository.QuoteRepository
 import cl.duoc.mastermartini.domain.validation.FieldState
 import cl.duoc.mastermartini.domain.validation.Validators
@@ -36,6 +39,8 @@ data class CatalogUiState(
     val categories: List<String> = emptyList(),
     val products: List<Product> = emptyList(),
     val lines: Map<String, QuoteLine> = emptyMap(),
+    /** Ids de los productos favoritos de la cuenta. */
+    val favorites: Set<String> = emptySet(),
     val sheet: AddToQuoteForm? = null,
     val loading: Boolean = false,
     val error: String? = null,
@@ -43,10 +48,24 @@ data class CatalogUiState(
     val quoteCount: Int get() = lines.size
 }
 
+/** Filtro especial que muestra solo los favoritos (va primero en la fila de categorías). */
+const val FAVORITES_FILTER = "♥ Favoritos"
+
 class CatalogViewModel(
     private val catalog: ProductRepository,
     private val quotes: QuoteRepository,
+    private val favorites: FavoriteRepository,
 ) : ViewModel() {
+
+    private val _messages = Channel<String>(Channel.BUFFERED)
+    val messages = _messages.receiveAsFlow()
+
+    fun toggleFavorite(product: Product) {
+        viewModelScope.launch {
+            val error = favorites.toggle(product.id)
+            _messages.send(error ?: if (product.id in favorites.ids.value) "Guardado en favoritos" else "Quitado de favoritos")
+        }
+    }
 
     init { refresh() }
 
@@ -54,16 +73,22 @@ class CatalogViewModel(
 
     private val filters = MutableStateFlow(Triple("", null as String?, null as AddToQuoteForm?))
 
-    val state: StateFlow<CatalogUiState> = combine(filters, quotes.lines, catalog.products, catalog.status) { (query, category, sheet), lines, available, status ->
+    val state: StateFlow<CatalogUiState> = combine(filters, quotes.lines, catalog.products, catalog.status, favorites.ids) { (query, category, sheet), lines, available, status, favs ->
         val q = query.normalized()
         CatalogUiState(
             query = query,
             category = category,
-            categories = available.map { it.category }.distinct(),
+            categories = (if (favs.isNotEmpty()) listOf(FAVORITES_FILTER) else emptyList()) + available.map { it.category }.distinct(),
             products = available.filter {
-                (category == null || it.category == category) && (q.isBlank() || it.name.normalized().contains(q))
+                val inCategory = when (category) {
+                    null -> true
+                    FAVORITES_FILTER -> it.id in favs
+                    else -> it.category == category
+                }
+                inCategory && (q.isBlank() || it.name.normalized().contains(q))
             },
             lines = lines.associateBy { it.productId },
+            favorites = favs,
             sheet = sheet,
             loading = status.loading,
             error = status.error,

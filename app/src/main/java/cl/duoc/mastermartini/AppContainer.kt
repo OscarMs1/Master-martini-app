@@ -6,18 +6,23 @@ import cl.duoc.mastermartini.data.local.RegionCatalog
 import cl.duoc.mastermartini.data.local.SettingsDataStore
 import cl.duoc.mastermartini.data.remote.ApiClient
 import cl.duoc.mastermartini.data.remote.TokenStore
+import cl.duoc.mastermartini.data.repository.AddressRepository
 import cl.duoc.mastermartini.data.repository.ClassRepository
+import cl.duoc.mastermartini.data.repository.FavoriteRepository
 import cl.duoc.mastermartini.data.repository.ContentRepository
 import cl.duoc.mastermartini.data.repository.FakeContentRepository
 import cl.duoc.mastermartini.data.repository.ProductRepository
 import cl.duoc.mastermartini.data.repository.QuoteRepository
 import cl.duoc.mastermartini.data.repository.ReservationRepository
+import cl.duoc.mastermartini.data.repository.ReviewRepository
 import cl.duoc.mastermartini.data.repository.UserRepository
 import cl.duoc.mastermartini.device.ContactHelper
 import cl.duoc.mastermartini.device.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -46,6 +51,9 @@ class AppContainer(context: Context) {
     val classes = ClassRepository(api)
     val quotes = QuoteRepository(db.quoteDao(), settings, api)
     val reservations = ReservationRepository(db.reservationDao(), settings, api)
+    val addresses = AddressRepository(api)
+    val favorites = FavoriteRepository(api)
+    val reviews = ReviewRepository(api)
 
     val notifications = NotificationHelper(context)
     val contact = ContactHelper
@@ -54,6 +62,13 @@ class AppContainer(context: Context) {
         appScope.launch {
             // Sesión guardada por una versión anterior de la app (sin token): se pide iniciar sesión de nuevo.
             if (users.hasBrokenSession()) users.logout() else users.refreshProfile()
+        }
+        // Direcciones y favoritos pertenecen a la cuenta: se cargan al iniciar sesión y se borran al salir.
+        appScope.launch {
+            users.currentUser.map { it?.id }.distinctUntilChanged().collect { id ->
+                if (id == null) { addresses.clear(); favorites.clear() }
+                else { launch { addresses.refresh() }; launch { favorites.refresh() } }
+            }
         }
     }
 }

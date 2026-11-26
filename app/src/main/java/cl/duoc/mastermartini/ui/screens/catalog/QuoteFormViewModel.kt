@@ -5,7 +5,20 @@ import androidx.lifecycle.viewModelScope
 import cl.duoc.mastermartini.data.local.RegionCatalog
 import cl.duoc.mastermartini.data.model.QuoteLine
 import cl.duoc.mastermartini.data.model.User
+import cl.duoc.mastermartini.data.model.Product
+import cl.duoc.mastermartini.data.model.SavedAddress
+import cl.duoc.mastermartini.data.model.ServiceItem
+import cl.duoc.mastermartini.data.repository.AddressDraft
+import cl.duoc.mastermartini.data.repository.AddressRepository
+import cl.duoc.mastermartini.data.repository.ClassRepository
 import cl.duoc.mastermartini.data.repository.Delivery
+import cl.duoc.mastermartini.data.repository.ReservationRepository
+import cl.duoc.mastermartini.data.repository.ReserveResult
+import cl.duoc.mastermartini.domain.ClassSuggestion
+import cl.duoc.mastermartini.domain.ProductSuggestion
+import cl.duoc.mastermartini.domain.Recommendations
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import cl.duoc.mastermartini.data.repository.OrderEstimate
 import cl.duoc.mastermartini.data.repository.OrderResult
 import cl.duoc.mastermartini.data.repository.ProductRepository
@@ -36,6 +49,12 @@ data class PricedLine(val line: QuoteLine, val unitPrice: Long?) {
     val subtotal: Long get() = (unitPrice ?: 0) * line.quantity
 }
 
+/** Sugerencias que se muestran bajo los productos del carrito. */
+data class CartSuggestions(
+    val products: List<ProductSuggestion> = emptyList(),
+    val classes: List<ClassSuggestion> = emptyList(),
+)
+
 /** Resultado del envío para el diálogo final. */
 data class SentOrder(val code: String, val approved: Boolean, val total: Long, val summary: String, val notified: Boolean)
 
@@ -49,6 +68,12 @@ data class QuoteFormState(
     val dateMillis: Long? = null,
     val dateError: String? = null,
     val notes: FieldState = FieldState(),
+    /** Dirección guardada que se eligió (null = escrita a mano). */
+    val selectedAddressId: Long? = null,
+    /** Guardar la dirección escrita en "Mis direcciones" al confirmar el pedido. */
+    val saveAddress: Boolean = false,
+    /** Clase que el usuario quiere inscribir desde el carrito (diálogo de confirmación). */
+    val confirmingClass: ServiceItem? = null,
     /** Pago simulado (proyecto académico): permite mostrar los dos flujos del backend. */
     val paymentApproved: Boolean = true,
     val loading: Boolean = false,
@@ -67,10 +92,29 @@ fun formatDate(millisUtc: Long): String =
 class QuoteFormViewModel(
     private val users: UserRepository,
     private val quotes: QuoteRepository,
-    catalog: ProductRepository,
+    private val catalog: ProductRepository,
     val regions: RegionCatalog,
     private val notifications: NotificationHelper,
+    private val classes: ClassRepository,
+    private val reservations: ReservationRepository,
+    private val addresses: AddressRepository,
 ) : ViewModel() {
+
+    val savedAddresses: StateFlow<List<SavedAddress>> = addresses.addresses
+
+    /** Productos y clases sugeridos según lo que hay en el carrito. */
+    val suggestions: StateFlow<CartSuggestions> = combine(
+        quotes.lines, catalog.products, classes.classes, reservations.reservations,
+    ) { lines, products, remoteClasses, enrolled ->
+        val cart = lines.map { it.productId }.toSet()
+        CartSuggestions(
+            products = Recommendations.products(cart, products, remoteClasses),
+            classes = Recommendations.classes(cart, products, remoteClasses, enrolled.map { it.serviceId }.toSet()),
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CartSuggestions())
+
+    private val _messages = Channel<String>(Channel.BUFFERED)
+    val messages = _messages.receiveAsFlow()
 
     val lines: StateFlow<List<PricedLine>> = combine(quotes.lines, catalog.products) { lines, products ->
         lines.map { line -> PricedLine(line, products.firstOrNull { it.id == line.productId }?.finalPrice) }
@@ -99,7 +143,62 @@ class QuoteFormViewModel(
             }
         }
         if (catalog.products.value.isEmpty()) viewModelScope.launch { catalog.refresh() }
+        if (classes.classes.value.isEmpty()) viewModelScope.launch { classes.refresh() }
+        viewModelScope.launch { reservations.refreshEnrollments() }
+        viewModelScope.launch { addresses.refresh() }
     }
+
+    // ---------- Sugerencias ----------
+
+    fun addSuggestion(product: Product) {
+        viewModelScope.launch {
+            quotes.setLine(product.id, product.name, product.formats.first(), 1)
+            _messages.send("${product.name} agregado a tu carrito")
+        }
+    }
+
+    fun askClass(item: ServiceItem) = _state.update { it.copy(confirmingClass = item) }
+    fun dismissClass() = _state.update { it.copy(confirmingClass = null) }
+
+    fun confirmClass() {
+        val item = _state.value.confirmingClass ?: return
+        _state.update { it.copy(confirmingClass = null) }
+        viewModelScope.launch {
+            val msg = when (val r = reservations.enroll(item.id)) {
+                ReserveResult.Success -> {
+                    classes.refresh()
+                    notifications.show("Inscripción confirmada", "${item.title} · ${item.dateLabel}.")
+                    "Te inscribiste en ${item.title}. La verás en Mi cuenta."
+                }
+                ReserveResult.AlreadyReserved -> "Ya estabas inscrita/o en esta clase"
+                ReserveResult.NotLogged -> "Inicia sesión para inscribirte"
+                is ReserveResult.Error -> r.message
+            }
+            _messages.send(msg)
+        }
+    }
+
+    // ---------- Direcciones guardadas ----------
+
+    fun applyAddress(a: SavedAddress) = _state.update {
+        it.copy(
+            selectedAddressId = a.id,
+            saveAddress = false,
+            delivery = Delivery.DOMICILIO,
+            contactName = if (a.contactName.isBlank()) it.contactName else it.contactName.update(a.contactName, Validators::name),
+            phone = if (a.phone.isBlank()) it.phone else it.phone.update(a.phone, Validators::phone),
+            region = it.region.update(a.region, ::validateRegion),
+            comuna = it.comuna.update(a.comuna) { c -> validateComuna(a.region, c) },
+            address = it.address.update(a.address, Validators::address),
+        )
+    }
+
+    fun onSaveAddress(v: Boolean) = _state.update { it.copy(saveAddress = v) }
+
+    /** Se ofrece guardar la dirección si es nueva y aún no se llega al máximo. */
+    fun canSaveAddress(s: QuoteFormState, saved: List<SavedAddress>): Boolean =
+        s.delivery == Delivery.DOMICILIO && s.selectedAddressId == null && saved.size < AddressRepository.MAX &&
+            saved.none { it.address.equals(s.address.value.trim(), ignoreCase = true) && it.comuna == s.comuna.value }
 
     fun estimate(lines: List<PricedLine>, delivery: Delivery): OrderEstimate =
         OrderEstimate.of(lines.sumOf { it.subtotal }, delivery)
@@ -110,10 +209,12 @@ class QuoteFormViewModel(
         val region = it.region.update(v, ::validateRegion).copy(touched = true)
         // Al cambiar de región, la comuna anterior deja de ser válida.
         val comuna = if (regions.comunas(v).any { c -> c == it.comuna.value }) it.comuna else FieldState()
-        it.copy(region = region, comuna = comuna)
+        it.copy(region = region, comuna = comuna, selectedAddressId = null)
     }
-    fun onComuna(v: String) = _state.update { it.copy(comuna = it.comuna.update(v) { c -> validateComuna(it.region.value, c) }.copy(touched = true)) }
-    fun onAddress(v: String) = _state.update { it.copy(address = it.address.update(v, Validators::address)) }
+    fun onComuna(v: String) = _state.update {
+        it.copy(comuna = it.comuna.update(v) { c -> validateComuna(it.region.value, c) }.copy(touched = true), selectedAddressId = null)
+    }
+    fun onAddress(v: String) = _state.update { it.copy(address = it.address.update(v, Validators::address), selectedAddressId = null) }
     fun onDelivery(d: Delivery) = _state.update { it.copy(delivery = d) }
     fun onPayment(approved: Boolean) = _state.update { it.copy(paymentApproved = approved) }
     fun onNotes(v: String) = _state.update { it.copy(notes = it.notes.update(v) { n -> Validators.optionalText(n, 300) }.copy(touched = true)) }
@@ -161,6 +262,16 @@ class QuoteFormViewModel(
             when (result) {
                 is OrderResult.Sent -> {
                     requestKey = UUID.randomUUID().toString()
+                    if (result.approved && v.saveAddress && canSaveAddress(v, addresses.addresses.value)) {
+                        val saved = runCatching {
+                            addresses.add(u, AddressDraft(
+                                label = "Dirección ${addresses.addresses.value.size + 1}",
+                                contactName = v.contactName.value, phone = v.phone.value,
+                                region = v.region.value, comuna = v.comuna.value, address = v.address.value,
+                            ))
+                        }
+                        if (saved.isFailure) _messages.send(saved.exceptionOrNull()?.message ?: "No se pudo guardar la dirección")
+                    }
                     val notified = result.approved && notifications.show(
                         "Pedido ${result.code} confirmado",
                         "Pago simulado aprobado. Lo verás en Mi cuenta → Mis pedidos.",
